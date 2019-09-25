@@ -1,0 +1,4 @@
+# ignore list for C-project
+bin/
+obj/
+*.cbp
