@@ -8,6 +8,8 @@
 #define MMEMORY_H
 
 #include <stddef.h>
+#include <limits.h>
+#include <stdint.h>
 
 typedef char* VA;				// Тип описывающий адрес блока
 
@@ -94,6 +96,6 @@ int _write (VA ptr, void* pBuffer, size_t szBuffer);
 	@retval	-1	неверные параметры
 	@retval	1	неизвестная ошибка
  **/
-int initialize(int n, int szPage);
+int initialise(int n, int szPage);
 
 #endif //MMEMORY_H

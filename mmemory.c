@@ -1,17 +1,18 @@
 #include "mmemory.h"
 #include <stdlib.h>
 
+/**
+info structure
+**/
 struct Block {
     VA       	data;			//pointer to real data
     size_t      dataSize;
 };
 
 /**
-info structure
+data structure
 **/
 struct MemoryManager {
-	//init flag
-    int 			isInited;	//TODO: make isInited=0
     //user data memory
     VA       		heap;
     size_t     		heapSize;	//why by default ==1?TODO: make heapSize=0
@@ -20,7 +21,12 @@ struct MemoryManager {
     size_t			blocksAmount;
 };
 
-struct MemoryManager manager;
+//init flag
+int 			isInited=0;	//TODO: make isInited=0
+
+struct MemoryManager* manager=0;	//{0,0,0,0,0};
+//max memory size
+const long MAX_MEM_SIZE = (long)INT_MAX*INT_MAX;
 
 /**
  	@func	_malloc
@@ -36,35 +42,36 @@ struct MemoryManager manager;
 	@retval	1	неизвестная ошибка
  **/
 int _malloc (VA* ptr, size_t szBlock) {
-	/*
-	TODO: undefined behaviour if size_t<0 (return -2)
-	*/
-	//printf("\t[init=%d,szBlock=%d,blocks(%d)]\n",manager.isInited,szBlock,manager.blocksAmount);//log
-
+////	printf("\t[init=%d],manager=%p\n",isInited,manager);
 	//check initialisation
-	if(!manager.isInited)
+	if(!isInited)
 		return 1;
 	//check arguments
-	if(szBlock==0)
-	//if(szBlock<=0)
-		return -1;
+	if(szBlock>=LONG_MAX)
+		return -1;		//bigger than max memory
+	else {
+		//check if negative
+		long lng_szBlock = (long)szBlock;	//size_t is unsigned
+		if(lng_szBlock<=0)
+			return -1;
+	}
 	if(!ptr)
 		return -1;
 	//search free space with required size
 	*ptr=0;
-	if(!manager.blocksAmount) {
+	if(!manager->blocksAmount) {
 		//no blocks yet
-		if(szBlock<manager.heapSize)
-			*ptr=manager.heap;
-		else//{
-			//printf("\t[szBlock(%d)>manager.heapSize(%d)]\n",szBlock,manager.heapSize);	//log
+		if(szBlock<manager->heapSize)
+			*ptr=manager->heap;
+		else {
+////			printf("\t[szBlock(%ld)>manager->heapSize(%ld)]\n",szBlock,manager->heapSize);
 			return -2;
-			//}
+		}
 	} else {
 		//calculate free space between blocks
-		for(int i=0;i<manager.blocksAmount-1;i++) {
-			VA prev_end = manager.blocks[i].data+manager.blocks[i].dataSize;
-			VA next_start = manager.blocks[i+1].data;
+		for(int i=0;i<manager->blocksAmount-1;i++) {
+			VA prev_end = manager->blocks[i].data+manager->blocks[i].dataSize;
+			VA next_start = manager->blocks[i+1].data;
 			if(prev_end+szBlock<next_start) {
 				//required space found
 				*ptr=prev_end;
@@ -73,25 +80,29 @@ int _malloc (VA* ptr, size_t szBlock) {
 		}
 		//calculate free space after block(s)
 		if((*ptr)==0) {
-			//if(szBlock<0) printf("[SZBLOCK<0]");	//log
-			VA last_end = manager.blocks[manager.blocksAmount-1].data-manager.heap+
-							manager.blocks[manager.blocksAmount-1].dataSize;
-			VA memory_end = manager.heapSize;
-			if(last_end+szBlock<memory_end) {
+			if(manager->blocks[manager->blocksAmount-1].data-manager->heap<0) {
+////				printf("\t&heap>&blocks[last]\n");
+				return 1;
+			}
+			VA last_end = manager->blocks[manager->blocksAmount-1].data+
+				manager->blocks[manager->blocksAmount-1].dataSize;
+			VA memory_end = manager->heap+manager->heapSize;
+			if(last_end+szBlock<=memory_end) {
 				//required space found
 				*ptr=last_end;
-			} else //{	//log
-				//printf("\t[required space not found (need end %d real %d]\n",last_end+szBlock,memory_end);
-				
+			} else {
 				//required space not found
+////				printf("\t[required space not found (mem on %ld,need %ld]\n",
+////												last_end+szBlock,memory_end);
 				return -2;
-				//}
+			}
 		}
 	}
 	//create space block
-	manager.blocks[manager.blocksAmount].data=*ptr;
-	manager.blocks[manager.blocksAmount].dataSize=szBlock;
-	manager.blocksAmount++;
+////	printf("\tblock:%p-%p\n",*ptr,*ptr+szBlock);
+	manager->blocks[manager->blocksAmount].data=*ptr;
+	manager->blocks[manager->blocksAmount].dataSize=szBlock;
+	manager->blocksAmount++;
 	//memory allocation is completed
 	return 0;
 }
@@ -110,20 +121,42 @@ int _malloc (VA* ptr, size_t szBlock) {
 	@retval	-1	неверные параметры
 	@retval	1	неизвестная ошибка
  **/
-int initialize (int n, int szPage) {
+int initialise (int n, int szPage) {
+	isInited=0;
 	//check input values
 	if(n<=0||szPage<=0)
 		return -1;
-	//allocate data heap
-	manager.heapSize = n*szPage;
-	manager.heap = malloc(manager.heapSize*sizeof(VA));
-	if(manager.heap == NULL)
+	//if manager exists, free it
+	if(manager) {
+////		printf("free manager\n");
+		free(manager->blocks);
+		manager->blocksAmount=0;
+		free(manager->heap);
+		manager->heapSize=0;
+		free(manager);
+		manager=0;
+	}
+	//create manager
+	manager = (struct MemoryManager*) malloc(sizeof(struct MemoryManager));
+	if(!manager) {
+////		printf("manager's memory was not allocated\n");
 		return 1;
+	}
+	//allocate data heap
+	manager->heapSize = (long)n*szPage;			//max==INT_MAX^2<LONG_MAX
+	manager->heap = malloc(sizeof(VA)*manager->heapSize);
+	if(manager->heap==0) {
+////		printf("heap's memory was not allocated\n");
+		free(manager);
+		manager=0;
+		return 1;
+	}
 	//create array of blocks with maximal length
-	manager.blocks = (struct Block*) calloc(manager.heapSize, sizeof(struct Block));
-	manager.blocksAmount = 0;
-	//initializsation is completed
-	manager.isInited = 1;
+	manager->blocks = (struct Block*) calloc(manager->heapSize, sizeof(struct Block));
+	manager->blocksAmount = 0;
+	//initialisation is completed
+	isInited = 1;
+////	printf("heap:%p,allocated:%ld\n",manager->heap,manager->heapSize);
 	return 0;
 }
 
